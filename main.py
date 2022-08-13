@@ -1,113 +1,82 @@
-from fastapi import FastAPI, HTTPException
-from requests import Session
-from database import base, engine, Pet
-from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-# Create database
-base.metadata.create_all(engine)
+import crud, models, schemas
+from database import SessionLocal, engine
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Create Read Update Delete
-@app.get("/")
-def root():
-    return "pet"
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-class PetRequest(BaseModel):
-    name: str
-    age: str
-    race: str
-    species: str
+# Create User
+@app.post("/users/", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    return crud.create_user(db=db, user=user)
 
-# Create
-@app.post("/pet")
-def create_pet(pet: PetRequest):
-    
-    # Create database session
-    session = Session(bind=engine, expire_on_commit=False)
-    
-    # Create instance of the Pet database model
-    petdb = Pet(name=pet.name, age=pet.age, race=pet.race, species=pet.species)
-    
-    session.add(petdb)
-    session.commit()
-    
-    # Get the created name id
-    id = petdb.id
-    
-    # Close session
-    session.close()
-    
-    return {"id": id, "name": pet.name, "age": pet.age, "race": pet.race, "species": pet.species}
+@app.get("/users/", response_model=list[schemas.User])
+def get_users(db: Session = Depends(get_db)):
+    users = crud.get_users(db)
+    return users
 
-# Read
-@app.get("/pet/{id}")
-def read_pet(id: int):
-    
-    # Create database session
-    session = Session(bind=engine, expire_on_commit=False)
-    
-    pet = session.query(Pet).get(id) # SELECT * FROM Pets WHERE ID = id
-    
-    # Close session
-    session.close()
-        
-    if not pet:
-        raise HTTPException(status_code=404, detail=f"Pet item with id {id} not found")
-    
-    return {"id": id, "name": pet.name, "age": pet.age, "race": pet.race, "species": pet.species}
+@app.get("/users/{user_id}", response_model=schemas.User)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = crud.get_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
-# Update
-@app.put("/pet/{id}")
-def update_pet(id: int, name: str, age: str, race: str, species: str):
-    # Create database session
-    session = Session(bind=engine, expire_on_commit=False)
-    
-    pet = session.query(Pet).get(id) # SELECT * FROM Pets WHERE ID = id
-    if pet:
-        pet.name = name
-        pet.age = age
-        pet.race = race
-        pet.species = species
-        session.commit()        
-    
-    # Close session
-    session.close()
-    
-    if not pet:
-        raise HTTPException(status_code=404, detail=f"Pet item with id {id} not found")
-    
+# Create Pet
+@app.post("/users/{user_id}/pets/", response_model=schemas.Pet)
+def create_pet_for_user(
+    user_id: int, pet: schemas.PetCreate, db: Session = Depends(get_db)
+):
+    return crud.create_user_pet(db=db, pet=pet, user_id=user_id)
+
+@app.get("/pets/", response_model=list[schemas.Pet])
+def get_pets(db: Session = Depends(get_db)):
+    pets = crud.get_pets(db)
+    return pets
+
+@app.get("/pets/{pet_id}", response_model=schemas.Pet)
+def get_pet(pet_id: int, db: Session = Depends(get_db)):
+    pet = crud.get_pet(db, pet_id)
+    if pet is None:
+        raise HTTPException(status_code=404, detail="Pet not found")
     return pet
 
-# Delete
-@app.delete("/pet/{id}")
-def delete_pet(id: int):
-    # Create database session
-    session = Session(bind=engine, expire_on_commit=False)
-    
-    pet = session.query(Pet).get(id) # SELECT * FROM Pets WHERE ID = id
-    if pet:
-        session.delete(pet)
-        session.commit()        
-    
-    # Close session
-    session.close()
-    
-    if not pet:
-        raise HTTPException(status_code=404, detail=f"Pet item with id {id} not found")
-    
-    return pet
+# # Update pet
+# @app.put("/pets/{pet_id}", response_model=schemas.Pet)
+# def update_pet(pet_id: int, pet: schemas.PetUpdate, db: Session = Depends(get_db)):
+#     pet = crud.get_pet(db, pet_id)
+#     if pet is None:
+#         raise HTTPException(status_code=404, detail="Pet not found")
+#     return crud.update_pet(db=db, pet=pet, pet_id=pet_id)
 
-# Get all
-@app.get("/pet")
-def read_pet_list():
-    # Create database session
-    session = Session(bind=engine, expire_on_commit=False)
+# # Delete pet
+# @app.delete("/pet/{id}")
+# def delete_pet(id: int):
+#     # Create database session
+#     session = Session(bind=engine, expire_on_commit=False)
     
-    pet_list = session.query(Pet).all() # SELECT * FROM Pets
+#     pet = session.query(Pet).get(id) # SELECT * FROM Pets WHERE ID = id
+#     if pet:
+#         session.delete(pet)
+#         session.commit()        
     
-    # Close session
-    session.close()
+#     # Close session
+#     session.close()
     
-    return pet_list
+#     if not pet:
+#         raise HTTPException(status_code=404, detail=f"Pet item with id {id} not found")
+    
+#     return pet
